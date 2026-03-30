@@ -3,6 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { processBrainDump } from "@/lib/ai/process-dump";
 import { type Project } from "@/lib/types";
 
+// Allow up to 60 seconds for AI processing (requires Vercel Pro)
+// On Hobby plan this will be capped at 10s — upgrade if dumps time out
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
