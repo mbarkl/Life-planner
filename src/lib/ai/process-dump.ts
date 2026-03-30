@@ -38,13 +38,14 @@ Extract ALL actionable items, ideas, and notes from this brain dump. For each it
 - body: Additional context if needed, null if the title captures everything
 - type: "task" (something to do), "idea" (something to explore/consider), "note" (information to remember), or "reference" (a link, resource, or contact)
 - category: Which existing category this belongs to (use the closest match)
-- project: An existing project name OR "new: Project Name" if this needs a new project, or null if standalone
+- project: An existing project name OR "new: Project Name" if this needs a new project, or null if standalone. IMPORTANT: If multiple items belong to the same project, use the EXACT SAME project name for all of them.
 - priority: "high" (urgent/important), "medium" (should do soon), "low" (nice to have/someday)
 - suggested_date: When this should be done (YYYY-MM-DD format), null if no timeframe
+- recurring: true if this is a habit or routine that should repeat daily (e.g. "drink water in morning", "take vitamins", "go to gym"), false for one-off tasks
 - reasoning: Brief explanation of why you categorized it this way
 
 Return ONLY a valid JSON array. No markdown, no explanation outside the JSON.
-Example: [{"title": "Call dentist", "body": null, "type": "task", "category": "Health & Fitness", "project": null, "priority": "medium", "suggested_date": "2026-03-31", "reasoning": "Direct action item, health-related"}]`,
+Example: [{"title": "Call dentist", "body": null, "type": "task", "category": "Health & Fitness", "project": null, "priority": "medium", "suggested_date": "2026-03-31", "recurring": false, "reasoning": "Direct action item, health-related"}, {"title": "Drink water upon waking", "body": null, "type": "task", "category": "Health & Fitness", "project": "Weight Loss Journey", "priority": "medium", "suggested_date": null, "recurring": true, "reasoning": "Daily habit"}]`,
       },
     ],
   });
@@ -58,7 +59,6 @@ Example: [{"title": "Call dentist", "body": null, "type": "task", "category": "H
     const items: AIExtractedItem[] = JSON.parse(content.text);
     return items;
   } catch {
-    // Try to extract JSON from the response if it has surrounding text
     const jsonMatch = content.text.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);

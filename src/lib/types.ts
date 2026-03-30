@@ -48,6 +48,7 @@ export interface Item {
   due_date: string | null;
   suggested_date: string | null;
   ai_confidence: number | null;
+  recurring: boolean;
   created_at: string;
   updated_at: string;
   // Joined fields
@@ -86,6 +87,7 @@ export interface AIExtractedItem {
   project: string | null;
   priority: Priority;
   suggested_date: string | null;
+  recurring: boolean;
   reasoning: string;
 }
 
