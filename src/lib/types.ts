@@ -49,6 +49,7 @@ export interface Item {
   suggested_date: string | null;
   ai_confidence: number | null;
   recurring: boolean;
+  suggested_project: string | null;
   created_at: string;
   updated_at: string;
   // Joined fields

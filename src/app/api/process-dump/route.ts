@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { processBrainDump } from "@/lib/ai/process-dump";
-import { type Project } from "@/lib/types";
 
 // Allow up to 60 seconds for AI processing (requires Vercel Pro)
-// On Hobby plan this will be capped at 10s — upgrade if dumps time out
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
@@ -40,18 +38,12 @@ export async function POST(request: Request) {
   ]);
 
   try {
-    // Process with AI
     const extracted = await processBrainDump(
       text.trim(),
       categories ?? [],
       existingProjects ?? []
     );
 
-    // Track newly created projects within this dump so we don't duplicate them
-    const projectCache = new Map<string, string>(); // name -> id
-    const allProjects: Project[] = [...(existingProjects ?? [])];
-
-    // Create items in the database
     const createdItems = [];
     for (const item of extracted) {
       // Find matching category
@@ -59,45 +51,25 @@ export async function POST(request: Request) {
         (c) => c.name.toLowerCase() === item.category.toLowerCase()
       );
 
-      // Handle project - find existing or create new
+      // Only assign to an EXISTING project — never auto-create
       let projectId: string | null = null;
+      let suggestedProject: string | null = null;
+
       if (item.project) {
-        // Strip "new: " prefix if AI added it
         const projectName = item.project.startsWith("new: ")
           ? item.project.slice(5)
           : item.project;
 
-        const normalizedName = projectName.toLowerCase();
+        const existing = (existingProjects ?? []).find(
+          (p) => p.name.toLowerCase() === projectName.toLowerCase()
+        );
 
-        // Check cache first (projects created earlier in this same dump)
-        if (projectCache.has(normalizedName)) {
-          projectId = projectCache.get(normalizedName)!;
+        if (existing) {
+          // Assign to existing project silently
+          projectId = existing.id;
         } else {
-          // Check existing projects from DB
-          const existingProject = allProjects.find(
-            (p) => p.name.toLowerCase() === normalizedName
-          );
-
-          if (existingProject) {
-            projectId = existingProject.id;
-          } else {
-            // Create new project and cache it
-            const { data: newProject } = await supabase
-              .from("projects")
-              .insert({
-                user_id: user.id,
-                name: projectName,
-                category_id: category?.id ?? null,
-              })
-              .select()
-              .single();
-
-            if (newProject) {
-              projectId = newProject.id;
-              projectCache.set(normalizedName, newProject.id);
-              allProjects.push(newProject);
-            }
-          }
+          // Store as a suggestion only — don't create the project
+          suggestedProject = projectName;
         }
       }
 
@@ -108,6 +80,7 @@ export async function POST(request: Request) {
           dump_id: dump.id,
           category_id: category?.id ?? null,
           project_id: projectId,
+          suggested_project: suggestedProject,
           type: item.type,
           title: item.title,
           body: item.body,
@@ -123,7 +96,6 @@ export async function POST(request: Request) {
       if (created) createdItems.push({ ...created, reasoning: item.reasoning });
     }
 
-    // Mark dump as processed
     await supabase.from("dumps").update({ processed: true }).eq("id", dump.id);
 
     return NextResponse.json({ items: createdItems, dump_id: dump.id });

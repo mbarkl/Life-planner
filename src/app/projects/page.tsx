@@ -15,13 +15,11 @@ import {
   FolderKanban,
   ChevronDown,
   ChevronRight,
-  Pencil,
   Trash2,
-  CheckSquare,
   Lightbulb,
   FileText,
-  CheckCircle2,
   Circle,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,18 +44,18 @@ const iconMap: Record<string, typeof Briefcase> = {
 };
 
 const colorOptions = [
-  "#3b82f6",
-  "#8b5cf6",
-  "#22c55e",
-  "#eab308",
-  "#f97316",
-  "#ec4899",
-  "#06b6d4",
-  "#ef4444",
+  "#3b82f6", "#8b5cf6", "#22c55e", "#eab308",
+  "#f97316", "#ec4899", "#06b6d4", "#ef4444",
 ];
 
+interface ProjectWithItems extends Project {
+  items: Item[];
+}
+
 interface CategoryWithData extends Category {
-  projects: (Project & { items: Item[] })[];
+  projects: ProjectWithItems[];
+  suggestions: Record<string, Item[]>; // suggested_project name -> items
+  unassigned: Item[];
 }
 
 export default function ProjectsPage() {
@@ -78,23 +76,40 @@ export default function ProjectsPage() {
       supabase.from("items").select("*").in("status", ["open", "in_progress"]),
     ]);
 
-    const merged: CategoryWithData[] = (cats ?? []).map((cat) => ({
-      ...cat,
-      projects: (projs ?? [])
-        .filter((p) => p.category_id === cat.id)
-        .map((p) => ({
-          ...p,
-          items: (items ?? []).filter((i) => i.project_id === p.id),
-        })),
-    }));
+    const merged: CategoryWithData[] = (cats ?? []).map((cat) => {
+      const catItems = (items ?? []).filter((i) => i.category_id === cat.id);
+      const assignedItems = catItems.filter((i) => i.project_id);
+      const unassignedItems = catItems.filter((i) => !i.project_id);
+
+      // Group unassigned items by their AI-suggested project name
+      const suggestions: Record<string, Item[]> = {};
+      unassignedItems.forEach((item) => {
+        if (item.suggested_project) {
+          if (!suggestions[item.suggested_project]) {
+            suggestions[item.suggested_project] = [];
+          }
+          suggestions[item.suggested_project].push(item);
+        }
+      });
+
+      return {
+        ...cat,
+        projects: (projs ?? [])
+          .filter((p) => p.category_id === cat.id)
+          .map((p) => ({
+            ...p,
+            items: assignedItems.filter((i) => i.project_id === p.id),
+          })),
+        suggestions,
+        unassigned: unassignedItems.filter((i) => !i.suggested_project),
+      };
+    });
 
     setCategories(merged);
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -108,9 +123,7 @@ export default function ProjectsPage() {
   const addCategory = async () => {
     if (!newCatName.trim()) return;
     const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
     await supabase.from("categories").insert({
@@ -134,9 +147,7 @@ export default function ProjectsPage() {
   const addProject = async (categoryId: string) => {
     if (!newProjName.trim()) return;
     const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
     await supabase.from("projects").insert({
@@ -147,6 +158,32 @@ export default function ProjectsPage() {
 
     setNewProjName("");
     setNewProjCatId(null);
+    fetchData();
+  };
+
+  // Create a project from an AI suggestion and assign all suggested items to it
+  const createProjectFromSuggestion = async (
+    categoryId: string,
+    suggestionName: string,
+    items: Item[]
+  ) => {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: newProject } = await supabase
+      .from("projects")
+      .insert({ user_id: user.id, category_id: categoryId, name: suggestionName })
+      .select()
+      .single();
+
+    if (newProject) {
+      await supabase
+        .from("items")
+        .update({ project_id: newProject.id, suggested_project: null })
+        .in("id", items.map((i) => i.id));
+    }
+
     fetchData();
   };
 
@@ -162,13 +199,10 @@ export default function ProjectsPage() {
       <Header title="Projects & Categories" />
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
-          {/* Add Category */}
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Categories</h2>
             <Dialog open={showNewCat} onOpenChange={setShowNewCat}>
-              <DialogTrigger
-                className="inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium border border-input bg-background px-3 py-1.5 hover:bg-accent hover:text-accent-foreground"
-              >
+              <DialogTrigger className="inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium border border-input bg-background px-3 py-1.5 hover:bg-accent hover:text-accent-foreground">
                 <Plus className="w-3.5 h-3.5" />
                 Add Category
               </DialogTrigger>
@@ -187,92 +221,67 @@ export default function ProjectsPage() {
                     {colorOptions.map((c) => (
                       <button
                         key={c}
-                        className={cn(
-                          "w-8 h-8 rounded-full border-2 transition-all",
-                          newCatColor === c
-                            ? "border-white scale-110"
-                            : "border-transparent"
-                        )}
+                        className={cn("w-8 h-8 rounded-full border-2 transition-all",
+                          newCatColor === c ? "border-white scale-110" : "border-transparent")}
                         style={{ backgroundColor: c }}
                         onClick={() => setNewCatColor(c)}
                       />
                     ))}
                   </div>
-                  <Button onClick={addCategory} className="w-full">
-                    Create Category
-                  </Button>
+                  <Button onClick={addCategory} className="w-full">Create Category</Button>
                 </div>
               </DialogContent>
             </Dialog>
           </div>
 
           {loading ? (
-            <div className="text-center py-12 text-muted-foreground">
-              Loading...
-            </div>
-          ) : categories.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <FolderKanban className="w-8 h-8 mx-auto mb-3 opacity-50" />
-              <p>No categories yet. Create one to get started!</p>
-            </div>
+            <div className="text-center py-12 text-muted-foreground">Loading...</div>
           ) : (
             categories.map((cat) => {
               const Icon = iconMap[cat.icon ?? ""] ?? FolderKanban;
               const isExpanded = expanded.has(cat.id);
+              const suggestionCount = Object.keys(cat.suggestions).length;
+
               return (
                 <Card key={cat.id}>
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
-                      <button
-                        className="flex items-center gap-2"
-                        onClick={() => toggleExpand(cat.id)}
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                        )}
+                      <button className="flex items-center gap-2" onClick={() => toggleExpand(cat.id)}>
+                        {isExpanded
+                          ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                          : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
                         <Icon className="w-4 h-4" style={{ color: cat.color }} />
                         <CardTitle className="text-base">{cat.name}</CardTitle>
                         <Badge variant="secondary" className="text-xs">
-                          {cat.projects.length} project
-                          {cat.projects.length !== 1 ? "s" : ""}
+                          {cat.projects.length} project{cat.projects.length !== 1 ? "s" : ""}
                         </Badge>
+                        {suggestionCount > 0 && (
+                          <Badge className="text-xs bg-violet-500/20 text-violet-300 border-violet-500/30">
+                            <Sparkles className="w-2.5 h-2.5 mr-1" />
+                            {suggestionCount} suggested
+                          </Badge>
+                        )}
                       </button>
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-red-400"
-                          onClick={() => deleteCategory(cat.id)}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-400"
+                        onClick={() => deleteCategory(cat.id)}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
                     </div>
                   </CardHeader>
+
                   {isExpanded && (
                     <CardContent className="space-y-3">
+                      {/* Existing projects */}
                       {cat.projects.map((proj) => (
-                        <div
-                          key={proj.id}
-                          className="ml-6 p-3 rounded-lg border bg-accent/20"
-                        >
+                        <div key={proj.id} className="ml-6 p-3 rounded-lg border bg-accent/20">
                           <div className="flex items-center justify-between mb-2">
-                            <span className="font-medium text-sm">
-                              {proj.name}
-                            </span>
-                            <Badge variant="secondary" className="text-xs">
-                              {proj.items.length} open
-                            </Badge>
+                            <span className="font-medium text-sm">{proj.name}</span>
+                            <Badge variant="secondary" className="text-xs">{proj.items.length} open</Badge>
                           </div>
                           {proj.items.length > 0 && (
                             <div className="space-y-1">
                               {proj.items.slice(0, 5).map((item) => (
-                                <div
-                                  key={item.id}
-                                  className="flex items-center gap-2 text-sm text-muted-foreground"
-                                >
+                                <div key={item.id} className="flex items-center gap-2 text-sm text-muted-foreground">
                                   {item.type === "task" ? (
                                     <button onClick={() => toggleTask(item)}>
                                       <Circle className="w-3.5 h-3.5 hover:text-violet-400" />
@@ -295,42 +304,58 @@ export default function ProjectsPage() {
                         </div>
                       ))}
 
-                      {/* Add project */}
+                      {/* AI-suggested projects — grouped, with "Create Project" button */}
+                      {Object.entries(cat.suggestions).map(([suggestedName, suggestedItems]) => (
+                        <div key={suggestedName} className="ml-6 p-3 rounded-lg border border-dashed border-violet-500/30 bg-violet-500/5">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                              <span className="font-medium text-sm text-violet-300">{suggestedName}</span>
+                              <span className="text-xs text-muted-foreground">AI suggested</span>
+                            </div>
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs bg-violet-600 hover:bg-violet-700"
+                              onClick={() => createProjectFromSuggestion(cat.id, suggestedName, suggestedItems)}
+                            >
+                              <Plus className="w-3 h-3 mr-1" />
+                              Create Project
+                            </Button>
+                          </div>
+                          <div className="space-y-1">
+                            {suggestedItems.map((item) => (
+                              <div key={item.id} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                {item.type === "task" ? (
+                                  <Circle className="w-3.5 h-3.5" />
+                                ) : item.type === "idea" ? (
+                                  <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
+                                ) : (
+                                  <FileText className="w-3.5 h-3.5" />
+                                )}
+                                <span className="truncate">{item.title}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Add project manually */}
                       {newProjCatId === cat.id ? (
                         <div className="ml-6 flex gap-2">
                           <Input
                             placeholder="Project name"
                             value={newProjName}
                             onChange={(e) => setNewProjName(e.target.value)}
-                            onKeyDown={(e) =>
-                              e.key === "Enter" && addProject(cat.id)
-                            }
+                            onKeyDown={(e) => e.key === "Enter" && addProject(cat.id)}
                             autoFocus
                             className="h-8 text-sm"
                           />
-                          <Button
-                            size="sm"
-                            onClick={() => addProject(cat.id)}
-                            className="h-8"
-                          >
-                            Add
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setNewProjCatId(null)}
-                            className="h-8"
-                          >
-                            Cancel
-                          </Button>
+                          <Button size="sm" onClick={() => addProject(cat.id)} className="h-8">Add</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setNewProjCatId(null)} className="h-8">Cancel</Button>
                         </div>
                       ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="ml-6 text-muted-foreground"
-                          onClick={() => setNewProjCatId(cat.id)}
-                        >
+                        <Button variant="ghost" size="sm" className="ml-6 text-muted-foreground"
+                          onClick={() => setNewProjCatId(cat.id)}>
                           <Plus className="w-3.5 h-3.5 mr-1.5" />
                           Add Project
                         </Button>
