@@ -14,11 +14,13 @@ export function QuickDump({ onProcessed }: QuickDumpProps) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ items: Array<{ title: string; type: string; category?: { name: string } }> } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     if (!text.trim() || loading) return;
     setLoading(true);
     setResult(null);
+    setError(null);
 
     try {
       const res = await fetch("/api/process-dump", {
@@ -27,14 +29,18 @@ export function QuickDump({ onProcessed }: QuickDumpProps) {
         body: JSON.stringify({ text }),
       });
 
-      if (!res.ok) throw new Error("Failed to process");
-
       const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error ?? `Error ${res.status}`);
+        return;
+      }
+
       setResult(data);
       setText("");
       onProcessed?.();
     } catch (err) {
-      console.error("Dump processing failed:", err);
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -81,6 +87,12 @@ export function QuickDump({ onProcessed }: QuickDumpProps) {
             )}
           </Button>
         </div>
+
+        {error && (
+          <div className="mt-3 p-2 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+            Error: {error}
+          </div>
+        )}
 
         {result && result.items.length > 0 && (
           <div className="mt-4 space-y-2">
