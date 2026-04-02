@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { seedCategoriesIfNeeded } from "@/lib/supabase/seed-categories";
+import { seedRecordCategoriesIfNeeded } from "@/lib/supabase/seed-record-categories";
 import { Sidebar } from "@/components/layout/Sidebar";
 
 export default async function DashboardLayout({
@@ -16,7 +17,10 @@ export default async function DashboardLayout({
   if (!user) redirect("/");
 
   // Seed categories on first login
-  await seedCategoriesIfNeeded(supabase, user.id);
+  await Promise.all([
+    seedCategoriesIfNeeded(supabase, user.id),
+    seedRecordCategoriesIfNeeded(supabase, user.id),
+  ]);
 
   return (
     <div className="flex h-screen overflow-hidden">

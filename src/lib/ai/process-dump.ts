@@ -1,67 +1,115 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { type AIExtractedItem, type Category, type Project } from "@/lib/types";
+import {
+  type AIExtractedItem,
+  type AIExtractedRecord,
+  type Category,
+  type Project,
+  type RecordCategory,
+} from "@/lib/types";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+export interface ProcessDumpResult {
+  items: AIExtractedItem[];
+  records: AIExtractedRecord[];
+}
+
 export async function processBrainDump(
   rawText: string,
   categories: Category[],
-  projects: Project[]
-): Promise<AIExtractedItem[]> {
+  projects: Project[],
+  recordCategories: RecordCategory[]
+): Promise<ProcessDumpResult> {
   const categoryNames = categories.map((c) => c.name).join(", ");
-  const projectNames = projects.map((p) => `${p.name} (in ${categories.find((c) => c.id === p.category_id)?.name ?? "uncategorized"})`).join(", ");
-
+  const projectNames = projects
+    .map((p) => `${p.name} (in ${categories.find((c) => c.id === p.category_id)?.name ?? "uncategorized"})`)
+    .join(", ");
+  const recordCategoryNames = recordCategories.map((c) => c.name).join(", ");
   const today = new Date().toISOString().split("T")[0];
 
   const message = await anthropic.messages.create({
     model: "claude-3-5-sonnet-20241022",
-    max_tokens: 2048,
+    max_tokens: 3000,
     messages: [
       {
         role: "user",
-        content: `You are an AI assistant for a personal life planning app called "Life Planner". The user has brain-dumped the following text. Your job is to extract structured items from it.
+        content: `You are an AI assistant for a personal life planning app called "Life Planner". The user has brain-dumped the following text. Extract two types of information: ITEMS (tasks, ideas, notes) and RECORDS (completed medical/service events worth remembering).
 
 Today's date: ${today}
 
-Existing categories: ${categoryNames || "Work, Personal, Health & Fitness, Finance, Learning, Relationships"}
+Task categories: ${categoryNames || "Work, Personal, Health & Fitness, Finance, Learning, Relationships"}
 Existing projects: ${projectNames || "None yet"}
+Record vault categories: ${recordCategoryNames || "Medical, Home Services, Auto, Financial, Legal"}
 
 Brain dump:
 """
 ${rawText}
 """
 
-Extract ALL actionable items, ideas, and notes from this brain dump. For each item, determine:
-- title: A clear, concise title (action-oriented for tasks)
-- body: Additional context if needed, null if the title captures everything
-- type: "task" (something to do), "idea" (something to explore/consider), "note" (information to remember), or "reference" (a link, resource, or contact)
-- category: Which existing category this belongs to (use the closest match)
-- project: An existing project name OR "new: Project Name" if this needs a new project, or null if standalone. IMPORTANT: If multiple items belong to the same project, use the EXACT SAME project name for all of them.
-- priority: "high" (urgent/important), "medium" (should do soon), "low" (nice to have/someday)
-- suggested_date: When this should be done (YYYY-MM-DD format), null if no timeframe
-- recurring: true if this is a habit or routine that should repeat daily (e.g. "drink water in morning", "take vitamins", "go to gym"), false for one-off tasks
-- reasoning: Brief explanation of why you categorized it this way
+---
 
-Return ONLY a valid JSON array. No markdown, no explanation outside the JSON.
-Example: [{"title": "Call dentist", "body": null, "type": "task", "category": "Health & Fitness", "project": null, "priority": "medium", "suggested_date": "2026-03-31", "recurring": false, "reasoning": "Direct action item, health-related"}, {"title": "Drink water upon waking", "body": null, "type": "task", "category": "Health & Fitness", "project": "Weight Loss Journey", "priority": "medium", "suggested_date": null, "recurring": true, "reasoning": "Daily habit"}]`,
+PART 1 — ITEMS: Extract actionable tasks, ideas, notes, references.
+- title: clear concise title
+- body: extra context or null
+- type: "task" | "idea" | "note" | "reference"
+- category: closest task category
+- project: existing project name, or null (do NOT suggest new projects)
+- priority: "high" | "medium" | "low"
+- suggested_date: YYYY-MM-DD or null
+- recurring: true if this is a daily habit/routine, false otherwise
+- reasoning: brief explanation
+
+PART 2 — RECORDS: Extract completed medical or service events worth remembering for future reference.
+
+Signs of a MEDICAL record: a doctor visit, procedure, test, diagnosis, or prescription — something that already happened with a named provider or outcome.
+
+Signs of a SERVICE record: a named company/contractor did work, with a cost, description of what was done, or an opinion on quality.
+
+Do NOT put these in items. Put them in records.
+
+For each record:
+- type: always "record"
+- title: what was done (e.g., "Basal cell removal from shoulder", "AC blower motor replacement")
+- description: additional detail or null
+- provider_name: name of doctor/company or null
+- record_category: one of [${recordCategoryNames || "Medical, Home Services, Auto, Financial, Legal"}]
+- specialty: provider specialty if inferable (e.g., "Dermatologist", "HVAC") or null
+- service_date: YYYY-MM-DD if mentioned, or null
+- cost: dollar amount as number if mentioned, or null
+- follow_up_date: YYYY-MM-DD if a future follow-up date or interval is mentioned. Calculate from service_date if an interval is given (e.g., "next year" = service_date + 1 year, "in 6 months" = today + 6 months). Null if no follow-up mentioned.
+- follow_up_notes: description of follow-up needed or null
+- outcome: brief outcome/result description or null
+- would_use_again: true if positive sentiment about provider, false if negative, null if not mentioned
+- reasoning: brief explanation
+
+Return ONLY this JSON object (no markdown, no extra text):
+{
+  "items": [...],
+  "records": [...]
+}`,
       },
     ],
   });
 
   const content = message.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected response type from Claude");
-  }
+  if (content.type !== "text") throw new Error("Unexpected response type from Claude");
 
   try {
-    const items: AIExtractedItem[] = JSON.parse(content.text);
-    return items;
+    const result = JSON.parse(content.text);
+    return {
+      items: result.items ?? [],
+      records: result.records ?? [],
+    };
   } catch {
-    const jsonMatch = content.text.match(/\[[\s\S]*\]/);
+    const jsonMatch = content.text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      const result = JSON.parse(jsonMatch[0]);
+      return {
+        items: result.items ?? [],
+        records: result.records ?? [],
+      };
     }
     throw new Error("Failed to parse AI response as JSON");
   }

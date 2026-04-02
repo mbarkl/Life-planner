@@ -2,76 +2,50 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { processBrainDump } from "@/lib/ai/process-dump";
 
-// Allow up to 60 seconds for AI processing (requires Vercel Pro)
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { text } = await request.json();
   if (!text || typeof text !== "string" || text.trim().length === 0) {
     return NextResponse.json({ error: "Text is required" }, { status: 400 });
   }
 
-  // Save the raw dump
   const { data: dump, error: dumpError } = await supabase
     .from("dumps")
     .insert({ user_id: user.id, raw_text: text.trim() })
     .select()
     .single();
 
-  if (dumpError) {
-    return NextResponse.json({ error: "Failed to save dump" }, { status: 500 });
-  }
+  if (dumpError) return NextResponse.json({ error: "Failed to save dump" }, { status: 500 });
 
-  // Get user's categories and projects for context
-  const [{ data: categories }, { data: existingProjects }] = await Promise.all([
-    supabase.from("categories").select("*").eq("user_id", user.id).order("sort_order"),
-    supabase.from("projects").select("*").eq("user_id", user.id).eq("status", "active"),
-  ]);
+  const [{ data: categories }, { data: existingProjects }, { data: recordCategories }] =
+    await Promise.all([
+      supabase.from("categories").select("*").eq("user_id", user.id).order("sort_order"),
+      supabase.from("projects").select("*").eq("user_id", user.id).eq("status", "active"),
+      supabase.from("record_categories").select("*").eq("user_id", user.id).order("sort_order"),
+    ]);
 
   try {
     const extracted = await processBrainDump(
       text.trim(),
       categories ?? [],
-      existingProjects ?? []
+      existingProjects ?? [],
+      recordCategories ?? []
     );
 
+    // ── ITEMS ──────────────────────────────────────────────────────────────
     const createdItems = [];
-    for (const item of extracted) {
-      // Find matching category
+    for (const item of extracted.items) {
       const category = (categories ?? []).find(
         (c) => c.name.toLowerCase() === item.category.toLowerCase()
       );
-
-      // Only assign to an EXISTING project — never auto-create
-      let projectId: string | null = null;
-      let suggestedProject: string | null = null;
-
-      if (item.project) {
-        const projectName = item.project.startsWith("new: ")
-          ? item.project.slice(5)
-          : item.project;
-
-        const existing = (existingProjects ?? []).find(
-          (p) => p.name.toLowerCase() === projectName.toLowerCase()
-        );
-
-        if (existing) {
-          // Assign to existing project silently
-          projectId = existing.id;
-        } else {
-          // Store as a suggestion only — don't create the project
-          suggestedProject = projectName;
-        }
-      }
+      const existing = (existingProjects ?? []).find(
+        (p) => p.name.toLowerCase() === (item.project ?? "").toLowerCase()
+      );
 
       const { data: created } = await supabase
         .from("items")
@@ -79,8 +53,8 @@ export async function POST(request: Request) {
           user_id: user.id,
           dump_id: dump.id,
           category_id: category?.id ?? null,
-          project_id: projectId,
-          suggested_project: suggestedProject,
+          project_id: existing?.id ?? null,
+          suggested_project: !existing && item.project ? item.project : null,
           type: item.type,
           title: item.title,
           body: item.body,
@@ -96,9 +70,77 @@ export async function POST(request: Request) {
       if (created) createdItems.push({ ...created, reasoning: item.reasoning });
     }
 
+    // ── RECORDS ────────────────────────────────────────────────────────────
+    const createdRecords = [];
+    for (const rec of extracted.records) {
+      const recCat = (recordCategories ?? []).find(
+        (c) => c.name.toLowerCase() === rec.record_category.toLowerCase()
+      );
+      const recordCategoryId = recCat?.id ?? null;
+
+      // Find or create provider (case-insensitive dedup)
+      let providerId: string | null = null;
+      if (rec.provider_name) {
+        const { data: existing } = await supabase
+          .from("providers")
+          .select("id, would_use_again")
+          .eq("user_id", user.id)
+          .ilike("name", rec.provider_name)
+          .maybeSingle();
+
+        if (existing) {
+          providerId = existing.id;
+          if (rec.would_use_again !== null && existing.would_use_again === null) {
+            await supabase
+              .from("providers")
+              .update({ would_use_again: rec.would_use_again, updated_at: new Date().toISOString() })
+              .eq("id", existing.id);
+          }
+        } else {
+          const { data: newProvider } = await supabase
+            .from("providers")
+            .insert({
+              user_id: user.id,
+              name: rec.provider_name,
+              record_category_id: recordCategoryId,
+              specialty: rec.specialty,
+              would_use_again: rec.would_use_again,
+            })
+            .select("id")
+            .single();
+          if (newProvider) providerId = newProvider.id;
+        }
+      }
+
+      const { data: created } = await supabase
+        .from("records")
+        .insert({
+          user_id: user.id,
+          provider_id: providerId,
+          record_category_id: recordCategoryId,
+          dump_id: dump.id,
+          title: rec.title,
+          description: rec.description,
+          service_date: rec.service_date ?? today(),
+          cost: rec.cost,
+          follow_up_date: rec.follow_up_date,
+          follow_up_notes: rec.follow_up_notes,
+          outcome: rec.outcome,
+          would_use_again: rec.would_use_again,
+        })
+        .select("*, provider:providers(*), record_category:record_categories(*)")
+        .single();
+
+      if (created) createdRecords.push({ ...created, reasoning: rec.reasoning });
+    }
+
     await supabase.from("dumps").update({ processed: true }).eq("id", dump.id);
 
-    return NextResponse.json({ items: createdItems, dump_id: dump.id });
+    return NextResponse.json({
+      items: createdItems,
+      records: createdRecords,
+      dump_id: dump.id,
+    });
   } catch (error) {
     console.error("AI processing error:", error);
     return NextResponse.json(
@@ -106,4 +148,8 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+function today() {
+  return new Date().toISOString().split("T")[0];
 }

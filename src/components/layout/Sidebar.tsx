@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Inbox,
   FolderKanban,
+  Archive,
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inbox", label: "Brain Dump", icon: Inbox },
   { href: "/projects", label: "Projects", icon: FolderKanban },
+  { href: "/records", label: "Records Vault", icon: Archive },
 ];
 
 export function Sidebar() {

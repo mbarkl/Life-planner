@@ -13,7 +13,7 @@ interface QuickDumpProps {
 export function QuickDump({ onProcessed }: QuickDumpProps) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ items: Array<{ title: string; type: string; category?: { name: string } }> } | null>(null);
+  const [result, setResult] = useState<{ items: Array<{ title: string; type: string; category?: { name: string } }>; records?: Array<{ title: string }> } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
@@ -94,10 +94,11 @@ export function QuickDump({ onProcessed }: QuickDumpProps) {
           </div>
         )}
 
-        {result && result.items.length > 0 && (
+        {result && (result.items.length > 0 || (result.records?.length ?? 0) > 0) && (
           <div className="mt-4 space-y-2">
             <p className="text-xs text-muted-foreground font-medium">
-              Extracted {result.items.length} item{result.items.length !== 1 ? "s" : ""}:
+              Extracted {result.items.length} item{result.items.length !== 1 ? "s" : ""}
+              {(result.records?.length ?? 0) > 0 && ` and ${result.records!.length} record${result.records!.length !== 1 ? "s" : ""}`}:
             </p>
             {result.items.map((item, i) => (
               <div
@@ -113,6 +114,17 @@ export function QuickDump({ onProcessed }: QuickDumpProps) {
                     {item.category.name}
                   </span>
                 )}
+              </div>
+            ))}
+            {result.records?.map((rec, i) => (
+              <div
+                key={`rec-${i}`}
+                className="flex items-center gap-2 text-sm p-2 rounded bg-background/50"
+              >
+                <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-medium">
+                  record
+                </span>
+                <span className="truncate">{rec.title}</span>
               </div>
             ))}
           </div>

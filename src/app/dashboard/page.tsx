@@ -6,6 +6,7 @@ import { TodayPanel } from "@/components/dashboard/TodayPanel";
 import { Suggestions } from "@/components/dashboard/Suggestions";
 import { ProjectsSidebar } from "@/components/dashboard/ProjectsSidebar";
 import { GoalsPanel } from "@/components/dashboard/GoalsPanel";
+import { FollowUpReminders } from "@/components/dashboard/FollowUpReminders";
 import { useState } from "react";
 
 export default function DashboardPage() {
@@ -29,6 +30,7 @@ export default function DashboardPage() {
 
             {/* Right column — Projects + Goals */}
             <div className="space-y-6">
+              <FollowUpReminders />
               <ProjectsSidebar />
               <GoalsPanel />
             </div>

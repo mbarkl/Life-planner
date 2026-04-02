@@ -100,3 +100,78 @@ export const DEFAULT_CATEGORIES = [
   { name: "Learning", color: "#f97316", icon: "book-open" },
   { name: "Relationships", color: "#ec4899", icon: "users" },
 ] as const;
+
+// ============================================================
+// RECORDS VAULT
+// ============================================================
+
+export interface RecordCategory {
+  id: string;
+  user_id: string;
+  name: string;
+  color: string;
+  icon: string | null;
+  is_system: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface Provider {
+  id: string;
+  user_id: string;
+  name: string;
+  record_category_id: string | null;
+  specialty: string | null;
+  phone: string | null;
+  address: string | null;
+  notes: string | null;
+  would_use_again: boolean | null;
+  created_at: string;
+  updated_at: string;
+  record_category?: RecordCategory;
+}
+
+export interface VaultRecord {
+  id: string;
+  user_id: string;
+  provider_id: string | null;
+  record_category_id: string | null;
+  dump_id: string | null;
+  title: string;
+  description: string | null;
+  service_date: string;
+  cost: number | null;
+  follow_up_date: string | null;
+  follow_up_notes: string | null;
+  follow_up_completed: boolean;
+  outcome: string | null;
+  would_use_again: boolean | null;
+  created_at: string;
+  updated_at: string;
+  provider?: Provider;
+  record_category?: RecordCategory;
+}
+
+export interface AIExtractedRecord {
+  type: "record";
+  title: string;
+  description: string | null;
+  provider_name: string | null;
+  record_category: string;
+  specialty: string | null;
+  service_date: string | null;
+  cost: number | null;
+  follow_up_date: string | null;
+  follow_up_notes: string | null;
+  outcome: string | null;
+  would_use_again: boolean | null;
+  reasoning: string;
+}
+
+export const DEFAULT_RECORD_CATEGORIES = [
+  { name: "Medical",       color: "#22c55e", icon: "stethoscope" },
+  { name: "Home Services", color: "#f97316", icon: "home"        },
+  { name: "Auto",          color: "#3b82f6", icon: "car"         },
+  { name: "Financial",     color: "#eab308", icon: "dollar-sign" },
+  { name: "Legal",         color: "#8b5cf6", icon: "scale"       },
+] as const;
