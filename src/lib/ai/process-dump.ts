@@ -63,9 +63,18 @@ PART 1 — ITEMS: Extract actionable tasks, ideas, notes, references.
 
 PART 2 — RECORDS: Extract completed medical or service events worth remembering for future reference.
 
-Signs of a MEDICAL record: a doctor visit, procedure, test, diagnosis, or prescription — something that already happened with a named provider or outcome.
+Signs of a MEDICAL record (ALWAYS extract as record, never as task):
+- Any biopsy, surgery, procedure, test result, diagnosis, or prescription
+- Any doctor/specialist/dentist/dermatologist visit
+- Any vaccination, lab work, scan, or imaging
+- Anything involving a named provider or outcome
 
-Signs of a SERVICE record: a named company/contractor did work, with a cost, description of what was done, or an opinion on quality.
+Signs of a SERVICE record (ALWAYS extract as record, never as task):
+- A named company/contractor did work at your home or on your car
+- Any repair, installation, inspection with a cost or company name
+- Any opinion on quality of service received
+
+IMPORTANT: If it mentions a biopsy, procedure, test, or medical appointment that already happened — it MUST be a record, not a task. Even if there is a follow-up mentioned, the original event is a record AND the follow-up date goes in follow_up_date on that record. Do NOT create a separate task for a medical follow-up.
 
 Do NOT put these in items. Put them in records.
 
