@@ -83,6 +83,8 @@ For each record:
 - title: what was done (e.g., "Basal cell removal from shoulder", "AC blower motor replacement")
 - description: additional detail or null
 - provider_name: name of doctor/company or null
+- provider_phone: phone number if mentioned, or null
+- provider_address: address if mentioned, or null
 - record_category: one of [${recordCategoryNames || "Medical, Home Services, Auto, Financial, Legal"}]
 - specialty: provider specialty if inferable (e.g., "Dermatologist", "HVAC") or null
 - service_date: YYYY-MM-DD if mentioned, or null

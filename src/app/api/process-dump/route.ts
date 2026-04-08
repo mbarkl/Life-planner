@@ -83,18 +83,20 @@ export async function POST(request: Request) {
       if (rec.provider_name) {
         const { data: existing } = await supabase
           .from("providers")
-          .select("id, would_use_again")
+          .select("id, would_use_again, phone, address")
           .eq("user_id", user.id)
           .ilike("name", rec.provider_name)
           .maybeSingle();
 
         if (existing) {
           providerId = existing.id;
-          if (rec.would_use_again !== null && existing.would_use_again === null) {
-            await supabase
-              .from("providers")
-              .update({ would_use_again: rec.would_use_again, updated_at: new Date().toISOString() })
-              .eq("id", existing.id);
+          // Fill in any missing details on the existing provider
+          const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+          if (rec.would_use_again !== null && existing.would_use_again === null) updates.would_use_again = rec.would_use_again;
+          if (rec.provider_phone && !existing.phone) updates.phone = rec.provider_phone;
+          if (rec.provider_address && !existing.address) updates.address = rec.provider_address;
+          if (Object.keys(updates).length > 1) {
+            await supabase.from("providers").update(updates).eq("id", existing.id);
           }
         } else {
           const { data: newProvider } = await supabase
@@ -104,6 +106,8 @@ export async function POST(request: Request) {
               name: rec.provider_name,
               record_category_id: recordCategoryId,
               specialty: rec.specialty,
+              phone: rec.provider_phone ?? null,
+              address: rec.provider_address ?? null,
               would_use_again: rec.would_use_again,
             })
             .select("id")

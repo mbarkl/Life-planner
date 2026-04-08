@@ -157,6 +157,8 @@ export interface AIExtractedRecord {
   title: string;
   description: string | null;
   provider_name: string | null;
+  provider_phone: string | null;
+  provider_address: string | null;
   record_category: string;
   specialty: string | null;
   service_date: string | null;
