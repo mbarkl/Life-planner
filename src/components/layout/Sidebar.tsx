@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inbox", label: "Brain Dump", icon: Inbox },
-  { href: "/projects", label: "Projects", icon: FolderKanban },
+  { href: "/projects", label: "Projects & Goals", icon: FolderKanban },
   { href: "/records", label: "Records Vault", icon: Archive },
 ];
 
